@@ -1,1 +1,21 @@
 venv/
+trained_models/
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints
+data/
+logs/
+outputs/
+results/
+figures/
+
+# Ignore environment variables file
+.env
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# Ignore model files
