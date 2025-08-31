@@ -1,4 +1,5 @@
 venv/
+Trained_models/
 trained_models/
 __pycache__/
 *.pyc
