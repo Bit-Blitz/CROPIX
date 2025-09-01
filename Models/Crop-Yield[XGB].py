@@ -27,15 +27,15 @@ preprocessor = ColumnTransformer(
     remainder='passthrough'
 )
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=35)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=55)
 
 model_pipeline = Pipeline(steps=[
     ('preprocessor', preprocessor),
     ('regressor', xgb.XGBRegressor(
         objective='reg:squarederror',
         n_estimators=250,
-        learning_rate=0.01,
-        max_depth=15,
+        learning_rate=0.1,
+        max_depth=20,
         random_state=35,
     ))
 ])
