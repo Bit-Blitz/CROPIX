@@ -21,5 +21,6 @@ figures/
 *.log
 *.joblib
 Datasets/CNN_Images_dataset/
+.gitattributes
 
 
