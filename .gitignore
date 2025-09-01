@@ -20,5 +20,6 @@ figures/
 *.tmp
 *.log
 *.joblib
+Datasets/CNN_Images_dataset/
 
 
