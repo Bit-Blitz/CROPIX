@@ -4,6 +4,8 @@ from joblib import dump
 import re
 import os
 import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 def create_clean_basename(crop_name):
     base_name = crop_name.replace('(INR/Quintal)', '')
@@ -77,7 +79,7 @@ def train_and_save_model(file_path, crop_name):
         dump(model, model_save_path)
         print(f"Model successfully saved to: {model_save_path}")
 
-        plot_and_save_results(data, crop_name, model, "METRICS/SARIMA_Plots")
+        plot_and_save_results(data, crop_name, model, "METRICS/Market_Forecast[SARIMA]")
 
     except Exception as e:
         print(f"An unexpected error occurred while processing {crop_name}: {e}\n")
