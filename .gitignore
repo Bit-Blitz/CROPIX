@@ -22,5 +22,5 @@ figures/
 *.joblib
 Datasets/CNN_Images_dataset/
 .gitattributes
-
+SYNTHETIC DATA Scripts/
 
