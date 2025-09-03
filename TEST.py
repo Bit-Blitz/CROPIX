@@ -31,7 +31,6 @@ CNN_MODEL_PATH = os.path.join(MODELS_DIR, 'CNN_MODEL', 'disease_detection_model.
 CNN_CLASSES_PATH = os.path.join(MODELS_DIR, 'CNN_MODEL', 'disease_classes.npy')
 CNN_IMG_SIZE = (256, 256)
 
-# LSTM Model Paths and Config
 LSTM_MODEL_PATH = os.path.join(MODELS_DIR, "LSTM_model" ,'LSTM_model.keras')
 LSTM_SCALER_PATH = os.path.join(MODELS_DIR, "LSTM_model",'weather_scaler.pkl')
 LSTM_WEATHER_DATA_PATH = os.path.join(DATA_DIR, 'Weather_data.csv')
@@ -176,7 +175,6 @@ def forecast_market_price():
     print("-----------------------")
 
 
-# --- Helper and Workflow Functions ---
 
 def preprocess_image_for_cnn(img_array):
     img_array = cv2.resize(img_array, CNN_IMG_SIZE)
