@@ -24,8 +24,8 @@ def train_weather_model(data_file):
     data_df['time_idx'] = (data_df['date'] - data_df['date'].min()).dt.days
     data_df = data_df.drop_duplicates(subset=['location_id', 'time_idx'])
 
-    max_prediction_length = 60  # Predict 60 days ahead
-    max_encoder_length = 90     # Use last 90 days of data as input
+    max_prediction_length = 60 
+    max_encoder_length = 90    
     training_cutoff = data_df["time_idx"].max() - max_prediction_length
 
     training_data = TimeSeriesDataSet(
