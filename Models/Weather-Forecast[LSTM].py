@@ -2,11 +2,13 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import r2_score
+from sklearn.model_selection import train_test_split
 import tensorflow as tf
 from tensorflow.keras.models import Sequential # type: ignore
 from tensorflow.keras.layers import LSTM, Dense, Dropout # type: ignore
 from tensorflow.keras.callbacks import EarlyStopping, Callback # type: ignore
 import matplotlib.pyplot as plt
+import os
 
 class R2ScoreCallback(Callback):
     def __init__(self, validation_data, scaler, features, target_cols):
@@ -46,6 +48,7 @@ def create_sequences(data, targets, sequence_length):
 
 def plot_training_history(history):
     fig, axs = plt.subplots(1, 3, figsize=(21, 6))
+    fig.suptitle('Unified Model Training History', fontsize=16)
 
     axs[0].plot(history.history['loss'], label='Training Loss')
     axs[0].plot(history.history['val_loss'], label='Validation Loss')
@@ -71,7 +74,7 @@ def plot_training_history(history):
         axs[2].legend()
         axs[2].grid(True)
     
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
 def plot_predictions_vs_actuals(model, X_test, y_test, scaler, features, target_cols):
@@ -99,7 +102,7 @@ def plot_predictions_vs_actuals(model, X_test, y_test, scaler, features, target_
     plt.figure(figsize=(8, 8))
     plt.scatter(y_test_unscaled[:, 0], y_pred_unscaled[:, 0], alpha=0.5)
     plt.plot([y_test_unscaled[:, 0].min(), y_test_unscaled[:, 0].max()], [y_test_unscaled[:, 0].min(), y_test_unscaled[:, 0].max()], 'r--', lw=2)
-    plt.title(f'Actual vs. Predicted Temperature (R2 Score: {r2_score(y_test_unscaled[:, 0], y_pred_unscaled[:, 0]):.4f})')
+    plt.title(f'Unified Model: Actual vs. Predicted Temperature (R2 Score: {r2_score(y_test_unscaled[:, 0], y_pred_unscaled[:, 0]):.4f})')
     plt.xlabel('Actual Temperature (°C)')
     plt.ylabel('Predicted Temperature (°C)')
     plt.grid(True)
@@ -108,57 +111,62 @@ def plot_predictions_vs_actuals(model, X_test, y_test, scaler, features, target_
 
 def main():
     try:
-        df = pd.read_csv('weather_data.csv')
+        df = pd.read_csv('Datasets/LSTM_data/weather_data.csv')
     except FileNotFoundError:
         print("Error: 'weather_data.csv' not found. Please ensure the file is in the correct directory.")
         return
 
     df['time'] = pd.to_datetime(df['time'])
+    df.sort_values(by=['city', 'time'], inplace=True)
     df.set_index('time', inplace=True)
-    df.sort_index(inplace=True)
-
-    city_to_model = 'Mumbai'
-    print(f"Filtering data for city: {city_to_model}")
-    df_city = df[df['city'] == city_to_model].copy()
-
-    if df_city.empty:
-        print(f"Error: No data found for city '{city_to_model}'. Please choose another city.")
-        print(f"Available cities: {df['city'].unique().tolist()}")
-        return
-
-    print("Starting preprocessing...")
-    categorical_cols = ['wind_dir', 'condition_text', 'moon_phase']
-    df_city = pd.get_dummies(df_city, columns=categorical_cols, drop_first=True)
+    
+    print("Starting preprocessing for the unified model...")
+    categorical_cols = ['city', 'wind_dir', 'condition_text', 'moon_phase']
+    df = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
 
     target_cols = ['temp_c', 'precip_mm', 'humidity']
-    df_city = df_city.drop(columns=['state', 'city', 'sunrise', 'sunset', 'moonrise', 'moonset'])
+    df = df.drop(columns=['state', 'sunrise', 'sunset', 'moonrise', 'moonset'])
     
-    for col in df_city.columns:
-        if df_city[col].dtype == 'object':
-            df_city[col] = pd.to_numeric(df_city[col], errors='coerce')
-    df_city.dropna(inplace=True)
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    df.dropna(inplace=True)
 
-    features = df_city.columns.tolist()
+    features = df.columns.tolist()
     scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(df_city)
-    df_scaled = pd.DataFrame(scaled_data, columns=features, index=df_city.index)
+    df_scaled = pd.DataFrame(scaler.fit_transform(df), columns=features, index=df.index)
     
-    scaled_features_data = df_scaled[features].values
-    scaled_targets_data = df_scaled[target_cols].values
+    print("Creating sequences for each city...")
+    all_X, all_y = [], []
+    # Find original city names from the one-hot encoded columns
+    original_cities = [col for col in df.columns if col.startswith('city_')]
 
-    SEQUENCE_LENGTH = 24
-    X, y = create_sequences(scaled_features_data, scaled_targets_data, SEQUENCE_LENGTH)
-    
-    if len(X) == 0:
-        print("Error: Not enough data to create sequences. Try a shorter SEQUENCE_LENGTH or use a city with more data.")
-        return
-    print(f"Created {len(X)} sequences.")
+    for city_col in original_cities:
+        city_name = city_col.replace('city_', '')
+        
+        # Filter the scaled data for the current city
+        city_data_scaled = df_scaled[df_scaled[city_col] == 1]
+        
+        if len(city_data_scaled) < 100:
+            print(f"Skipping {city_name} due to insufficient data.")
+            continue
 
-    train_split_index = int(len(X) * 0.7)
-    val_split_index = int(len(X) * 0.8)
+        scaled_features_data = city_data_scaled[features].values
+        scaled_targets_data = city_data_scaled[target_cols].values
 
-    X_train, X_val, X_test = X[:train_split_index], X[train_split_index:val_split_index], X[val_split_index:]
-    y_train, y_val, y_test = y[:train_split_index], y[train_split_index:val_split_index], y[val_split_index:]
+        SEQUENCE_LENGTH = 24
+        X_city, y_city = create_sequences(scaled_features_data, scaled_targets_data, SEQUENCE_LENGTH)
+        
+        if len(X_city) > 0:
+            all_X.append(X_city)
+            all_y.append(y_city)
+
+    X = np.concatenate(all_X, axis=0)
+    y = np.concatenate(all_y, axis=0)
+    print(f"Total sequences created from all cities: {len(X)}")
+
+    X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.3, random_state=42, shuffle=True)
+    X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42, shuffle=True)
 
     print(f"Training data shape: {X_train.shape}")
     print(f"Validation data shape: {X_val.shape}")
@@ -175,25 +183,29 @@ def main():
     model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mean_absolute_error'])
     model.summary()
 
-    print("\nStarting model training...")
+    print("\nStarting unified model training...")
     early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
     r2_callback = R2ScoreCallback(validation_data=(X_val, y_val), scaler=scaler, features=features, target_cols=target_cols)
 
     history = model.fit(
         X_train, y_train,
-        epochs=50,
-        batch_size=32,
+        epochs=100,
+        batch_size=64, # Increased batch size for larger dataset
         validation_data=(X_val, y_val),
         verbose=1,
         callbacks=[early_stopping, r2_callback]
     )
     print("Model training complete.")
 
-    print("\nSaving the trained model...")
-    model.save('weather_model.keras')
-    print("Model successfully saved to 'weather_model.keras'")
+    output_dir = 'Trained_models'
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    model_filename = os.path.join(output_dir, 'LSTM_model.keras')
+    print(f"\nSaving the trained model to '{model_filename}'...")
+    model.save(model_filename)
+    print("Model successfully saved.")
 
-    print("\nEvaluating model on test data...")
+    print(f"\nEvaluating unified model on test data...")
     test_loss, test_mae = model.evaluate(X_test, y_test, verbose=0)
     print(f"Test Loss (MSE): {test_loss:.4f}")
     print(f"Test Mean Absolute Error: {test_mae:.4f}")
