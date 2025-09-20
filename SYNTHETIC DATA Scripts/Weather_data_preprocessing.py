@@ -1,65 +1,101 @@
 import pandas as pd
-import os
+import ast # To safely evaluate the string representation of the dictionary
 
-WEATHER_DATA_FILE = "Datasets/NBeats Model/WEATHER.xlsx"
-LOCATION_DATA_FILE = "Datasets/NBeats Model/Location information.xlsx"
-OUTPUT_FILE = "Datasets/NBeats Model/Weather_data_daily.csv"
-
-def preprocess_and_save_daily_data(weather_file, location_file, output_file):
-    print("--- Starting Daily Data Preprocessing ---")
-    print(f"Attempting to load data from {weather_file} and {location_file}...")
-
-    if not os.path.exists(weather_file) or not os.path.exists(location_file):
-        print("\nError: One or both data files not found.")
-        return
-
-    df_weather = pd.read_excel(weather_file)
-    df_location = pd.read_excel(location_file)
-    df = pd.merge(df_weather, df_location, on='last_updated_epoch')
-    print("Successfully merged weather and location data.")
-
-    df = df.rename(columns={
-        'temperature_celsius': 'temp',
-        'pressure_mb': 'pressure',
-        'humidity': 'humidity',
-        'wind_kph': 'wind_speed',
-        'precip_mm': 'precipitation',
-        'cloud': 'cloud_cover',
-        'uv_index': 'uv',
-        'location_name': 'location_id'
-    })
-
-    df['timestamp'] = pd.to_datetime(df['last_updated_epoch'], unit='s')
-    df.set_index('timestamp', inplace=True)
-    
-    print("Aggregating hourly data into daily summaries...")
-    
-    # Define how to aggregate each column
-    aggregation_rules = {
-        'temp': 'mean',
-        'pressure': 'mean',
-        'humidity': 'mean',
-        'wind_speed': 'mean',
-        'precipitation': 'sum', # Total daily rainfall
-        'cloud_cover': 'mean',
-        'uv': 'max' # Peak daily UV
-    }
-
-    # Group by location, then resample to daily frequency
-    df_daily = df.groupby('location_id').resample('D').agg(aggregation_rules).reset_index()
-    
-    df_daily = df_daily.rename(columns={'timestamp': 'date'})
-    df_daily = df_daily.dropna() # Remove days with no data
-    df_daily = df_daily.sort_values(by=['location_id', 'date'])
-    
-    output_dir = os.path.dirname(output_file)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+def clean_and_merge_weather_data(forecast_file, location_file, astro_file, output_file):
+    try:
+        # 1. Load all datasets
+        df_forecast = pd.read_csv(forecast_file)
+        df_location = pd.read_csv(location_file)
+        df_astro = pd.read_csv(astro_file)
         
-    df_daily.to_csv(output_file, index=False)
-    print(f"\nSuccessfully saved the clean, daily aggregated data to: {output_file}")
-    print("--- Data Preprocessing Complete ---")
+        print("Successfully loaded all three CSV files.")
 
-if __name__ == "__main__":
-    preprocess_and_save_daily_data(WEATHER_DATA_FILE, LOCATION_DATA_FILE, OUTPUT_FILE)
+        # --- 2. Process Forecast Data ---
+        print("Processing forecast_data.csv...")
+        # Convert time column to datetime objects
+        df_forecast['time'] = pd.to_datetime(df_forecast['time'])
+        
+        # Create a 'date' column for merging with daily data
+        df_forecast['date'] = df_forecast['time'].dt.date.astype(str)
+
+        # Safely parse the 'condition' column (it's a stringified dictionary)
+        # We will extract just the 'text' part.
+        def extract_condition_text(condition_str):
+            try:
+                # ast.literal_eval is safer than eval()
+                condition_dict = ast.literal_eval(condition_str)
+                return condition_dict.get('text', 'Unknown')
+            except (ValueError, SyntaxError):
+                return 'Unknown'
+        
+        df_forecast['condition_text'] = df_forecast['condition'].apply(extract_condition_text)
+
+        # Select relevant columns and drop redundant ones
+        forecast_cols_to_keep = [
+            'time', 'date', 'state', 'city', 'temp_c', 'is_day', 'wind_kph', 
+            'wind_dir', 'pressure_mb', 'precip_mm', 'humidity', 'cloud', 
+            'feelslike_c', 'vis_km', 'dewpoint_c', 'condition_text'
+        ]
+        df_forecast = df_forecast[forecast_cols_to_keep]
+
+        # --- 3. Process Location Data ---
+        print("Processing location_data.csv...")
+        # Convert localtime to datetime and extract date
+        df_location['localtime'] = pd.to_datetime(df_location['localtime'])
+        df_location['date'] = df_location['localtime'].dt.date.astype(str)
+        
+        # Keep relevant columns and remove duplicates for the same city on the same day
+        location_cols_to_keep = ['date', 'region', 'name', 'lat', 'lon']
+        df_location = df_location[location_cols_to_keep]
+        df_location.rename(columns={'region': 'state', 'name': 'city'}, inplace=True)
+        df_location.drop_duplicates(subset=['date', 'state', 'city'], inplace=True)
+
+        # --- 4. Process Astro Data ---
+        # As astro_data lacks a date, we prepare it for a merge based on city/state.
+        # This assumes the astro data is constant for a city.
+        print("Processing astro_data.csv...")
+        df_astro.drop_duplicates(subset=['state', 'city'], inplace=True)
+
+        # --- 5. Merge DataFrames ---
+        print("Merging DataFrames...")
+        # Merge forecast with location data
+        df_merged = pd.merge(df_forecast, df_location, on=['date', 'state', 'city'], how='left')
+
+        # Merge the result with astro data
+        df_final = pd.merge(df_merged, df_astro, on=['state', 'city'], how='left')
+
+        # --- 6. Final Cleanup ---
+        print("Performing final cleanup...")
+        # Sort the data to ensure correct time-series order
+        df_final.sort_values(by=['state', 'city', 'time'], inplace=True)
+
+        # Check for and handle any NaNs that may have resulted from merging
+        # Using forward fill is a reasonable strategy for time-series data
+        df_final.fillna(method='ffill', inplace=True)
+        df_final.dropna(inplace=True) # Drop any remaining NaNs at the beginning
+        
+        # Drop the intermediate 'date' column
+        df_final.drop(columns=['date'], inplace=True)
+
+        # Save to the final CSV
+        df_final.to_csv(output_file, index=False)
+        
+        print(f"\nSuccessfully created the consolidated file: {output_file}")
+        print(f"Final dataset has {df_final.shape[0]} rows and {df_final.shape[1]} columns.")
+        print("\nFirst 5 rows of the final dataset:")
+        print(df_final.head())
+        print("\nColumns in the final dataset:")
+        print(df_final.columns.tolist())
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}. Please make sure all input CSV files are in the same directory.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+if __name__ == '__main__':
+    forecast_csv = 'forecast_data.csv'
+    location_csv = 'location_data.csv'
+    astro_csv = 'astro_data.csv'
+    output_csv = 'consolidated_weather_data.csv'
+    clean_and_merge_weather_data(forecast_csv, location_csv, astro_csv, output_csv)
 
