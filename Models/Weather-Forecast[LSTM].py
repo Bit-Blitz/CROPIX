@@ -9,6 +9,9 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout # type: ignore
 from tensorflow.keras.callbacks import EarlyStopping, Callback # type: ignore
 import matplotlib.pyplot as plt
 import os
+import joblib
+import json
+
 
 class R2ScoreCallback(Callback):
     def __init__(self, validation_data, scaler, features, target_cols):
@@ -197,13 +200,23 @@ def main():
     )
     print("Model training complete.")
 
-    output_dir = 'Trained_models'
+    output_dir = 'Trained_models/LSTM'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     model_filename = os.path.join(output_dir, 'LSTM_model.keras')
     print(f"\nSaving the trained model to '{model_filename}'...")
     model.save(model_filename)
     print("Model successfully saved.")
+    
+    print("\nSaving preprocessing tools...")
+    scaler_filename = os.path.join(output_dir, 'scaler.gz')
+    joblib.dump(scaler, scaler_filename)
+    print(f"Scaler saved to '{scaler_filename}'")
+
+    features_filename = os.path.join(output_dir, 'features.json')
+    with open(features_filename, 'w') as f:
+        json.dump(features, f)
+    print(f"Feature list saved to '{features_filename}'")
 
     print(f"\nEvaluating unified model on test data...")
     test_loss, test_mae = model.evaluate(X_test, y_test, verbose=0)
@@ -212,7 +225,7 @@ def main():
 
     plot_training_history(history)
     plot_predictions_vs_actuals(model, X_test, y_test, scaler, features, target_cols)
-
+    
 if __name__ == '__main__':
     main()
 
